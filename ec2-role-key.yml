@@ -1,0 +1,73 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Resources:
+  InstanceRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service: "ec2.amazonaws.com"
+            Action: "sts:AssumeRole"
+      Policies:
+        - PolicyName: "Read"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "ssm:GetParameter"
+                Resource:
+                  - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/MySecureKey"
+
+  InstanceProfile:
+    Type: "AWS::IAM::InstanceProfile"
+    Properties:
+      Roles:
+        - !Ref InstanceRole
+
+  Instance:
+    Type: "AWS::EC2::Instance"
+    Properties:
+      ImageId: ami-066784287e358dad1
+      InstanceType: t2.micro
+      SecurityGroupIds:
+        - !Ref SecurityGroup
+      IamInstanceProfile: !Ref InstanceProfile
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          sudo yum -y update
+          sudo yum -y install nginx  
+          sudo systemctl start nginx
+          sudo systemctl enable nginx
+          sudo chmod 755 /usr/share/nginx/html
+          sudo curl -o  /usr/share/nginx/html/cat.jpg "https://as1.ftcdn.net/v2/jpg/02/36/99/22/1000_F_236992283_sNOxCVQeFLd5pdqaKGh8DRGMZy7P4XKm.jpg"
+          echo "<h2> Ready </h2>" | sudo tee /usr/share/nginx/html/index.html 
+          echo "<img src="cat.jpg" alt="Cat">" | sudo tee -a  /usr/share/nginx/html/index.html
+
+          KEY=$(aws ssm get-parameter --name "MySecureKey" --with-decryption --query "Parameter.Value" --output text)
+
+          sudo echo "$KEY" >> ~/.ssh/authorized_keys
+          sudo chmod 400 ~/.ssh/authorized_keys
+
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable ssh & http
+      SecurityGroupIngress:
+        - CidrIp: 0.0.0.0/0
+          FromPort: 22
+          IpProtocol: tcp
+          ToPort: 22
+
+        - CidrIp: 0.0.0.0/0
+          FromPort: 80
+          IpProtocol: tcp
+          ToPort: 80
+
+        - CidrIp: 185.53.133.78/32
+          FromPort: -1
+          IpProtocol: icmp
+          ToPort: -1
